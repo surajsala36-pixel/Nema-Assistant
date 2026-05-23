@@ -152,57 +152,69 @@ export default function App() {
     }
   }, [isMuted, isSessionActive]);
 
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+
+  const startLiveSessionRef = useRef<() => Promise<void>>(null as any);
+  const handleReconnectionRef = useRef<() => void>(null as any);
+
+  const isMutedRef = useRef(isMuted);
   useEffect(() => {
-    return () => {
-      if (liveSessionRef.current) {
-        liveSessionRef.current.stop();
-      }
-    };
-  }, []);
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
-  const toggleListening = async () => {
-    if (isSessionActive) {
-      setIsSessionActive(false);
-      if (liveSessionRef.current) {
-        liveSessionRef.current.stop();
-        liveSessionRef.current = null;
-      }
-      setAppState("idle");
+  const isSessionActiveRef = useRef(isSessionActive);
+  useEffect(() => {
+    isSessionActiveRef.current = isSessionActive;
+  }, [isSessionActive]);
+
+  const startLiveSession = useCallback(async () => {
+    try {
       resetNemaSession();
-    } else {
-      try {
-        setIsSessionActive(true);
-        resetNemaSession();
-        
-        const session = new LiveSessionManager();
-        session.isMuted = isMuted;
-        liveSessionRef.current = session;
-        
-        session.onStateChange = (state) => {
-          setAppState(state);
-        };
-        
-        session.onMessage = (sender, text) => {
-          setMessages((prev) => [...prev, { id: Date.now().toString() + "-" + sender, sender, text }]);
-        };
-        
-        session.onCommand = (url) => {
-          setTimeout(() => {
-            window.open(url, "_blank");
-          }, 1000);
-        };
+      
+      const session = new LiveSessionManager();
+      session.isMuted = isMutedRef.current;
+      liveSessionRef.current = session;
+      
+      session.onStateChange = (state) => {
+        setAppState(state);
+      };
+      
+      session.onMessage = (sender, text) => {
+        setMessages((prev) => [...prev, { id: Date.now().toString() + "-" + sender, sender, text }]);
+      };
+      
+      session.onCommand = (url) => {
+        setTimeout(() => {
+          window.open(url, "_blank");
+        }, 1000);
+      };
 
-        session.onDeviceStateChange = (device, value) => {
-          setDeviceState((prev) => ({
-            ...prev,
-            [device]: value,
-          }));
-        };
+      session.onDeviceStateChange = (device, value) => {
+        setDeviceState((prev) => ({
+          ...prev,
+          [device]: value,
+        }));
+      };
 
-        await session.start();
-      } catch (e) {
-        console.error("Failed to start session", e);
+      session.onClose = (err) => {
+        console.log("Live session closed unexpectedly, checking auto-reconnect...", err);
+        if (isSessionActiveRef.current) {
+          handleReconnectionRef.current();
+        }
+      };
+
+      await session.start();
+      setIsReconnecting(false);
+      reconnectAttemptsRef.current = 0; // reset on successful connection
+    } catch (e) {
+      console.error("Failed to start session:", e);
+      if (isSessionActiveRef.current) {
+        handleReconnectionRef.current();
+      } else {
         setIsSessionActive(false);
+        setIsReconnecting(false);
         setAppState("idle");
         setShowTextInput(true);
         setMessages((prev) => [
@@ -214,6 +226,77 @@ export default function App() {
           }
         ]);
       }
+    }
+  }, []);
+
+  const handleReconnection = useCallback(() => {
+    if (!isSessionActiveRef.current) return;
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+
+    setIsReconnecting(true);
+    setAppState("processing"); // Keep interactive UI state beautiful
+
+    // Exponential backoff
+    const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000);
+    reconnectAttemptsRef.current += 1;
+
+    console.log(`Scheduling reconnect attempt #${reconnectAttemptsRef.current} in ${delay}ms`);
+
+    reconnectTimeoutRef.current = setTimeout(async () => {
+      if (!isSessionActiveRef.current) {
+        setIsReconnecting(false);
+        return;
+      }
+      
+      console.log(`Reconnecting attempt #${reconnectAttemptsRef.current}...`);
+      
+      if (liveSessionRef.current) {
+        liveSessionRef.current.stop();
+        liveSessionRef.current = null;
+      }
+
+      await startLiveSessionRef.current();
+    }, delay);
+  }, []);
+
+  useEffect(() => {
+    startLiveSessionRef.current = startLiveSession;
+    handleReconnectionRef.current = handleReconnection;
+  }, [startLiveSession, handleReconnection]);
+
+  useEffect(() => {
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (liveSessionRef.current) {
+        liveSessionRef.current.stop();
+      }
+    };
+  }, []);
+
+  const toggleListening = async () => {
+    if (isSessionActive) {
+      setIsSessionActive(false);
+      setIsReconnecting(false);
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (liveSessionRef.current) {
+        liveSessionRef.current.stop();
+        liveSessionRef.current = null;
+      }
+      setAppState("idle");
+      resetNemaSession();
+    } else {
+      setIsSessionActive(true);
+      isSessionActiveRef.current = true;
+      reconnectAttemptsRef.current = 0;
+      await startLiveSession();
     }
   };
 
@@ -308,7 +391,17 @@ export default function App() {
         <div className="flex w-[30%] lg:w-[25%] h-full flex-col justify-center gap-4 z-10">
           <div className="h-6 flex justify-end">
             <AnimatePresence>
-              {appState === "listening" && (
+              {isReconnecting ? (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  className="flex items-center gap-2 text-amber-300/80 text-sm md:text-base italic"
+                >
+                  <Loader2 size={16} className="animate-spin text-amber-400" />
+                  Reconnecting...
+                </motion.div>
+              ) : appState === "listening" ? (
                 <motion.div
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -318,7 +411,7 @@ export default function App() {
                   <div className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
                   Listening...
                 </motion.div>
-              )}
+              ) : null}
             </AnimatePresence>
           </div>
         </div>

@@ -37,17 +37,20 @@ export class LiveSessionManager {
   private nextPlayTime: number = 0;
   private isPlaying: boolean = false;
   public isMuted: boolean = false;
+  private wasStoppedManually: boolean = false;
   
   public onStateChange: (state: "idle" | "listening" | "processing" | "speaking") => void = () => {};
   public onMessage: (sender: "user" | "nema", text: string) => void = () => {};
   public onCommand: (url: string) => void = () => {};
   public onDeviceStateChange: (device: string, value: boolean) => void = () => {};
+  public onClose: (error?: any) => void = () => {};
 
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   }
 
   async start() {
+    this.wasStoppedManually = false;
     try {
       this.onStateChange("processing");
       
@@ -227,11 +230,19 @@ export class LiveSessionManager {
           },
           onclose: () => {
             console.log("Live API Closed");
-            this.stop();
+            const wasManual = this.wasStoppedManually;
+            this.stopInternal();
+            if (!wasManual) {
+              this.onClose();
+            }
           },
           onerror: (err) => {
             console.error("Live API Error:", err);
-            this.stop();
+            const wasManual = this.wasStoppedManually;
+            this.stopInternal();
+            if (!wasManual) {
+              this.onClose(err);
+            }
           }
         }
       });
@@ -295,6 +306,11 @@ export class LiveSessionManager {
   }
 
   stop() {
+    this.wasStoppedManually = true;
+    this.stopInternal();
+  }
+
+  private stopInternal() {
     if (this.processor) {
       this.processor.disconnect();
       this.processor = null;
@@ -308,7 +324,9 @@ export class LiveSessionManager {
       this.mediaStream = null;
     }
     if (this.audioContext) {
-      this.audioContext.close();
+      try {
+        this.audioContext.close();
+      } catch (e) {}
       this.audioContext = null;
     }
     this.stopPlayback();
