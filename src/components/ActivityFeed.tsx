@@ -6,16 +6,22 @@ interface ChatMessage {
   id: string;
   sender: "user" | "nema";
   text: string;
+  username?: string;
 }
 
 interface ActivityFeedProps {
   messages: ChatMessage[];
   onClear: () => void;
   appState: "idle" | "listening" | "processing" | "speaking";
+  currentUser?: string;
 }
 
-export default function ActivityFeed({ messages, onClear, appState }: ActivityFeedProps) {
+export default function ActivityFeed({ messages, onClear, appState, currentUser = "Anmol Kumar" }: ActivityFeedProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const visibleMessages = currentUser === "Anmol Kumar"
+    ? messages
+    : messages.filter((msg) => msg.username === currentUser);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -30,7 +36,7 @@ export default function ActivityFeed({ messages, onClear, appState }: ActivityFe
           <Terminal size={12} className="text-violet-400" />
           NEMA TELEMETRY LOG
         </h3>
-        {messages.length > 0 && (
+        {visibleMessages.length > 0 && (
           <button
             onClick={onClear}
             className="text-[10px] font-mono text-red-400/60 hover:text-red-400 hover:bg-red-500/10 px-2 py-0.5 rounded transition-all border border-red-500/10 flex items-center gap-1"
@@ -48,7 +54,7 @@ export default function ActivityFeed({ messages, onClear, appState }: ActivityFe
         className="flex-1 overflow-y-auto no-scrollbar space-y-3.5 pr-1 py-1"
       >
         <AnimatePresence initial={false}>
-          {messages.length === 0 ? (
+          {visibleMessages.length === 0 ? (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -61,7 +67,7 @@ export default function ActivityFeed({ messages, onClear, appState }: ActivityFe
               <p className="text-[10px] font-mono mt-1 opacity-60">"Nema, wifi on karo" bol ke try kijiye!</p>
             </motion.div>
           ) : (
-            messages.map((msg, index) => {
+            visibleMessages.map((msg, index) => {
               const isNema = msg.sender === "nema";
               return (
                 <motion.div
@@ -76,12 +82,12 @@ export default function ActivityFeed({ messages, onClear, appState }: ActivityFe
                   }`}
                 >
                   <div className="flex items-center gap-1.5 justify-between">
-                    <span className={`text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full font-semibold ${
+                    <span className={`text-[9.5px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full font-semibold ${
                       isNema 
                         ? "bg-violet-500/10 text-violet-400" 
                         : "bg-cyan-500/10 text-cyan-400"
                     }`}>
-                      {isNema ? "★ Nema (AI)" : "✎ Anmol Sir"}
+                      {isNema ? "★ Nema (AI)" : `✎ ${msg.username || "User"}`}
                     </span>
                     <span className="text-[8px] font-mono text-white/30">
                       {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}

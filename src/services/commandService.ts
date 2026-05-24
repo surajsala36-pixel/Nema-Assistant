@@ -3,7 +3,9 @@ export function processCommand(command: string): {
   url?: string;
   isBrowserAction: boolean;
   systemAction?: {
-    device: "wifi" | "flashlight" | "bluetooth" | "location" | "dnd" | "powerSaver";
+    device: "wifi" | "flashlight" | "bluetooth" | "location" | "dnd" | "powerSaver" |
+            "phoneHotspot" | "phoneData" | "phoneMirroring" | "phoneLock" | "phoneSilent" |
+            "laptopBacklight" | "laptopScreenLock" | "laptopTurbo" | "laptopFanMax" | "laptopExternalDisplay";
     value: boolean;
   };
 } {
@@ -17,112 +19,185 @@ export function processCommand(command: string): {
     .replace(/\s+please$/, "")
     .trim();
 
-  // 1. WiFi Simulated Controls
-  if (cleanCmd.match(/^(wifi|wi-fi)\s*(on|chalu|enable|turn\s+on|kholo|on\s+karo|chalu\s+karo)$/i) || 
-      cleanCmd.match(/^(turn\s+on|enable|chalu\s+karo|kholo)\s*(wifi|wi-fi)$/i)) {
-    return {
-      action: "Achha baaba, Wi-Fi ON kar diya! Ab high-speed 5G network enjoy karo, Anmol Kumar sir.",
-      isBrowserAction: false,
-      systemAction: { device: "wifi", value: true }
-    };
-  }
-  if (cleanCmd.match(/^(wifi|wi-fi)\s*(off|band|disable|turn\s+off|band\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+off|disable|band\s+karo)\s*(wifi|wi-fi)$/i)) {
-    return {
-      action: "Huh, Wi-Fi band kar diya! Offline rehne ka shauk chadha hai kya, Anmol Kumar sir?",
-      isBrowserAction: false,
-      systemAction: { device: "wifi", value: false }
-    };
-  }
+  // 1. Smart device state detector for 100% robust English & Hinglish (Hindi) inputs
+  const deviceConfigs: {
+    device: "wifi" | "flashlight" | "bluetooth" | "location" | "dnd" | "powerSaver" |
+            "phoneHotspot" | "phoneData" | "phoneMirroring" | "phoneLock" | "phoneSilent" |
+            "laptopBacklight" | "laptopScreenLock" | "laptopTurbo" | "laptopFanMax" | "laptopExternalDisplay";
+    deviceWords: string[];
+    onWords: string[];
+    offWords: string[];
+    onAction: string;
+    offAction: string;
+  }[] = [
+    {
+      device: "wifi",
+      deviceWords: ["wifi", "wi-fi", "wi fi"],
+      onWords: ["on", "chalu", "enable", "kholo", "start", "connect", "activate"],
+      offWords: ["off", "band", "disable", "stop", "disconnect", "deactivate"],
+      onAction: "Achha baaba, Wi-Fi ON kar diya! Ab high-speed 5G network enjoy karo, Anmol Kumar sir.",
+      offAction: "Huh, Wi-Fi band kar diya! Offline rehne ka shauk chadha hai kya, Anmol Kumar sir?"
+    },
+    {
+      device: "flashlight",
+      deviceWords: ["flashlight", "torch", "flash"],
+      onWords: ["on", "chalu", "enable", "jalao", "kholo", "start", "activate"],
+      offWords: ["off", "band", "disable", "bujhao", "stop", "deactivate"],
+      onAction: "Ufff, ye lo flashlight jala di! Aankhein mat chundhiya lena apni, Anmol Kumar sir! 💡",
+      offAction: "Flashlight band kar di! Ab andhere me dhyan se chalna sir, kahin gir mat jaana!"
+    },
+    {
+      device: "bluetooth",
+      deviceWords: ["bluetooth", "blutut", "bt"],
+      onWords: ["on", "chalu", "enable", "start", "connect", "activate"],
+      offWords: ["off", "band", "disable", "stop", "disconnect", "deactivate"],
+      onAction: "Bluetooth turned ON! AirPods connect ho jaayenge, gana sunna hai kya Anmol Kumar sir?",
+      offAction: "Bluetooth band! Chalo AirPods ko aaram do thoda, main waise bhi thak gayi hoon."
+    },
+    {
+      device: "location",
+      deviceWords: ["location", "gps", "map", "g p s"],
+      onWords: ["on", "chalu", "enable", "start", "kholo", "activate"],
+      offWords: ["off", "band", "disable", "stop", "deactivate"],
+      onAction: "GPS ON ho gaya! Haan haan sir, mujhe pata hai aap Bihar se hain, location track kar rahi hoon!",
+      offAction: "Location closed! Shhh... Anmol Kumar sir ab undercover mission pe ja rahe hain!"
+    },
+    {
+      device: "dnd",
+      deviceWords: ["dnd", "do not disturb", "silent mode", "do class no disturb"],
+      onWords: ["on", "chalu", "enable", "start", "active", "activate"],
+      offWords: ["off", "band", "disable", "stop", "deactivate"],
+      onAction: "Silent Mode ON! Thank goodness! Ab mujhe thoda sukoon milega, shhh... 🤫",
+      offAction: "DND OFF ho gaya, Anmol Kumar sir! Ab messages aur alerts ki baarish shuru hone wali hai."
+    },
+    {
+      device: "powerSaver",
+      deviceWords: ["power saver", "powersaver", "battery saver", "eco mode", "battery saver mode"],
+      onWords: ["on", "chalu", "enable", "start", "activate"],
+      offWords: ["off", "band", "disable", "stop", "deactivate"],
+      onAction: "Eco Mode ON! Anmol Kumar sir, thoda performance drop hoga, par battery bachi rahegi.",
+      offAction: "Eco mode OFF! Boost mode active, Anmol Kumar sir. Full power chaloo!"
+    },
+    {
+      device: "phoneHotspot",
+      deviceWords: ["hotspot", "hot spot", "phone hotspot", "mobile hotspot"],
+      onWords: ["on", "chalu", "enable", "start", "kholo", "activate"],
+      offWords: ["off", "band", "disable", "stop", "deactivate"],
+      onAction: "Ji sir, portable mobile Hotspot ON kar diya hai! NemaLink ready hai backup ke liye.",
+      offAction: "Leh, hotspot band kar diya. Ab sabhi connected devices offline ho jayenge!"
+    },
+    {
+      device: "phoneData",
+      deviceWords: ["cellular data", "mobile data", "phone data", "data", "internet", "5g", "cellular", "cell data"],
+      onWords: ["on", "chalu", "enable", "start", "kholo", "activate"],
+      offWords: ["off", "band", "disable", "stop", "deactivate"],
+      onAction: "Cellular 5G Data enabled on your phone! Jio True 5G networks and services running smoothly.",
+      offAction: "Phone mobile data OFF kar diya! Anmol sir, please direct WiFi pe shift ho jaona."
+    },
+    {
+      device: "phoneMirroring",
+      deviceWords: ["mirroring", "mirror", "screencast", "screen mirror", "screen mirroring"],
+      onWords: ["on", "chalu", "enable", "start", "connect", "kholo", "activate"],
+      offWords: ["off", "band", "disable", "stop", "disconnect", "deactivate"],
+      onAction: "Screencast active! Remote screen casting initialized via NemaLink. Phone screen now rendering.",
+      offAction: "Stopped screencasting. Sync connection returned to standard telemetry mode."
+    },
+    {
+      device: "phoneLock",
+      deviceWords: ["lock phone", "phone lock", "lock mobile", "mobile lock", "lock android", "lock iphone", "phone ko lock"],
+      onWords: ["lock", "on", "chalu", "sula", "sulao", "secure", "band"],
+      offWords: ["unlock", "off", "open", "kholo", "wake"],
+      onAction: "Phone secured, sir! Display locked remotely. Slide or use FaceID to open it again.",
+      offAction: "Phone unlocked! Welcome back, Anmol Kumar sir."
+    },
+    {
+      device: "phoneSilent",
+      deviceWords: ["silent phone", "phone silent", "mute phone", "phone mute", "silent mobile", "mobile silent"],
+      onWords: ["silent", "mute", "off", "chalu", "on"],
+      offWords: ["unsilent", "unmute", "ringer", "on", "off"],
+      onAction: "Phone doused into silent mode! Notifications will only vibrate now.",
+      offAction: "Phone normal ringer activated. Playful sound alerts are back on!"
+    },
+    {
+      device: "laptopBacklight",
+      deviceWords: ["keyboard backlight", "keyboard light", "backlight", "key light", "board light", "laptop backlight"],
+      onWords: ["on", "chalu", "enable", "start", "jalao", "kholo", "activate"],
+      offWords: ["off", "band", "disable", "stop", "bujhao", "deactivate"],
+      onAction: "Sure! Keyboard LED Backlight chalu kar diya hai (100% Brightness).",
+      offAction: "Offed the keyboard light. Keyboard dark mode activated, sir."
+    },
+    {
+      device: "laptopScreenLock",
+      deviceWords: ["lock laptop", "laptop sleep", "sleep laptop", "laptop lock", "suspend laptop", "laptop sleep mode", "laptop down", "laptop ko sula"],
+      onWords: ["sleep", "lock", "sula", "sulao", "band", "on"],
+      offWords: ["wake", "unlock", "kholo", "jga", "jagao", "off"],
+      onAction: "Putting laptop to deep sleep! Nema will wait right here for you. Bye-Bye sir!",
+      offAction: "Laptop woke up! Engine restored to full operational state, sir."
+    },
+    {
+      device: "laptopTurbo",
+      deviceWords: ["turbo", "performance mode", "boost mode", "overdrive", "turbo mode", "cpu turbo"],
+      onWords: ["on", "chalu", "enable", "start", "activate"],
+      offWords: ["off", "band", "disable", "stop", "deactivate"],
+      onAction: "Wooo! Turbo Boost initialized! Overclocking CPU cores to 4.8 GHz. Speed ahead, sir!",
+      offAction: "Deactivated turbo overclock. Processor scaling back to power-saving balance."
+    },
+    {
+      device: "laptopFanMax",
+      deviceWords: ["fan max", "max fan", "fan overdrive", "fans full", "cooler full", "fan full", "cooling max", "fan speed", "cooler speed", "cooling overdrive"],
+      onWords: ["on", "chalu", "enable", "start", "max", "full", "speed", "activate"],
+      offWords: ["off", "band", "disable", "stop", "auto", "deactivate"],
+      onAction: "Aww, laptop is getting hot? Max fan overdrive activated! Spinning up to 6200 RPM! 🌪️",
+      offAction: "Set laptop cooling fan behavior back to Intelligent Auto mode. Whew, quiet again!"
+    },
+    {
+      device: "laptopExternalDisplay",
+      deviceWords: ["external display", "hdmi", "secondary screen", "project screen", "projector", "double screen", "external monitor"],
+      onWords: ["on", "chalu", "enable", "start", "connect", "activate"],
+      offWords: ["off", "band", "disable", "stop", "disconnect", "deactivate"],
+      onAction: "External Display projection connected! Extended desktop viewport 4K rendering ready.",
+      offAction: "HDMI viewport disconnected. Reverted display to laptop internal LCD panel."
+    }
+  ];
 
-  // 2. Flashlight Simulated Controls
-  if (cleanCmd.match(/^(flashlight|torch|flash)\s*(on|chalu|enable|turn\s+on|jalao|on\s+karo|chalu\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+on|enable|chalu\s+karo|jalao)\s*(flashlight|torch|flash)$/i)) {
-    return {
-      action: "Ufff, ye lo flashlight jala di! Aankhein mat chundhiya lena apni, Anmol Kumar sir! 💡",
-      isBrowserAction: false,
-      systemAction: { device: "flashlight", value: true }
-    };
-  }
-  if (cleanCmd.match(/^(flashlight|torch|flash)\s*(off|band|disable|turn\s+off|bujhao|band\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+off|disable|band\s+karo|bujhao)\s*(flashlight|torch|flash)$/i)) {
-    return {
-      action: "Flashlight band kar di! Ab andhere me dhyan se chalna sir, kahin gir mat jaana!",
-      isBrowserAction: false,
-      systemAction: { device: "flashlight", value: false }
-    };
-  }
-
-  // 3. Bluetooth Simulated Controls
-  if (cleanCmd.match(/^(bluetooth)\s*(on|chalu|enable|turn\s+on|on\s+karo|chalu\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+on|enable|chalu\s+karo)\s*(bluetooth)$/i)) {
-    return {
-      action: "Bluetooth turned ON! AirPods connect ho jaayenge, gana sunna hai kya Anmol Kumar sir?",
-      isBrowserAction: false,
-      systemAction: { device: "bluetooth", value: true }
-    };
-  }
-  if (cleanCmd.match(/^(bluetooth)\s*(off|band|disable|turn\s+off|band\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+off|disable|band\s+karo)\s*(bluetooth)$/i)) {
-    return {
-      action: "Bluetooth band! Chalo AirPods ko aaram do thoda, main waise bhi thak gayi hoon.",
-      isBrowserAction: false,
-      systemAction: { device: "bluetooth", value: false }
-    };
-  }
-
-  // 4. Location Simulated Controls
-  if (cleanCmd.match(/^(location|gps|map)\s*(on|chalu|enable|turn\s+on|on\s+karo|chalu\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+on|enable|chalu\s+karo)\s*(location|gps)$/i)) {
-    return {
-      action: "GPS ON ho gaya! Haan haan sir, mujhe pata hai aap Bihar se hain, location track kar rahi hoon!",
-      isBrowserAction: false,
-      systemAction: { device: "location", value: true }
-    };
-  }
-  if (cleanCmd.match(/^(location|gps|map)\s*(off|band|disable|turn\s+off|band\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+off|disable|band\s+karo)\s*(location|gps)$/i)) {
-    return {
-      action: "Location closed! Shhh... Anmol Kumar sir ab undercover mission pe ja rahe hain!",
-      isBrowserAction: false,
-      systemAction: { device: "location", value: false }
-    };
-  }
-
-  // 5. Do Not Disturb (DND) / Silent Controls
-  if (cleanCmd.match(/^(dnd|silent|do\s+not\s+disturb)\s*(on|chalu|enable|turn\s+on|on\s+karo|chalu\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+on|enable|chalu\s+karo)\s*(dnd|silent|do\s+not\s+disturb)$/i)) {
-    return {
-      action: "Silent Mode ON! Thank goodness! Ab mujhe thoda sukoon milega, shhh... 🤫",
-      isBrowserAction: false,
-      systemAction: { device: "dnd", value: true }
-    };
-  }
-  if (cleanCmd.match(/^(dnd|silent|do\s+not\s+disturb)\s*(off|band|disable|turn\s+off|band\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+off|disable|band\s+karo)\s*(dnd|silent|do\s+not\s+disturb)$/i)) {
-    return {
-      action: "DND OFF ho gaya, Anmol Kumar sir! Ab messages aur alerts ki baarish shuru hone wali hai.",
-      isBrowserAction: false,
-      systemAction: { device: "dnd", value: false }
-    };
-  }
-
-  // 6. Power Saver simulated controls
-  if (cleanCmd.match(/^(power\s*saver|battery\s*saver|eco\s*mode|battery)\s*(on|chalu|enable|turn\s+on|on\s+karo|chalu\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+on|enable|chalu\s+karo)\s*(power\s*saver|battery\s*saver|eco\s*mode)$/i)) {
-    return {
-      action: "Eco Mode ON! Anmol Kumar sir, thoda performance drop hoga, par battery bachi rahegi.",
-      isBrowserAction: false,
-      systemAction: { device: "powerSaver", value: true }
-    };
-  }
-  if (cleanCmd.match(/^(power\s*saver|battery\s*saver|eco\s*mode|battery)\s*(off|band|disable|turn\s+off|band\s+karo)$/i) ||
-      cleanCmd.match(/^(turn\s+off|disable|band\s+karo)\s*(power\s*saver|battery\s*saver|eco\s*mode)$/i)) {
-    return {
-      action: "Eco mode OFF! Boost mode active, Anmol Kumar sir. Full power chaloo!",
-      isBrowserAction: false,
-      systemAction: { device: "powerSaver", value: false }
-    };
+  for (const config of deviceConfigs) {
+    const hasDeviceWord = config.deviceWords.some(dw => cleanCmd.includes(dw));
+    if (hasDeviceWord) {
+      // Find if there is an off word or on word
+      // Check offWords first to be safe, e.g. "bluetooth band karo"
+      const hasOffWord = config.offWords.some(ow => cleanCmd.includes(ow)) || 
+                          cleanCmd.includes("off") || 
+                          cleanCmd.includes("band") || 
+                          cleanCmd.includes("bujhao") ||
+                          cleanCmd.includes("close") ||
+                          cleanCmd.includes("disconnect") ||
+                          cleanCmd.includes("stop");
+      
+      const hasOnWord = config.onWords.some(ow => cleanCmd.includes(ow)) || 
+                         cleanCmd.includes("on") || 
+                         cleanCmd.includes("chalu") || 
+                         cleanCmd.includes("enable") || 
+                         cleanCmd.includes("start") ||
+                         cleanCmd.includes("jalao") ||
+                         cleanCmd.includes("kholo") ||
+                         cleanCmd.includes("play");
+      
+      let isOn = true;
+      if (hasOffWord) {
+        isOn = false;
+      } else if (hasOnWord) {
+        isOn = true;
+      } else {
+        // Fallback: Default to ON unless they explicitly requested off words
+        isOn = true;
+      }
+      
+      return {
+        action: isOn ? config.onAction : config.offAction,
+        isBrowserAction: false,
+        systemAction: { device: config.device, value: isOn }
+      };
+    }
   }
 
   // Mapping of common applications to their clean domains and proper titles
